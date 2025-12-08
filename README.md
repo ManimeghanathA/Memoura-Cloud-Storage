@@ -8,7 +8,7 @@
 
 ## 🚀 Live Demo & Core Value
 
-* **Try it Live:** `bit.ly/memoura`
+* **Try it Live:** [bit.ly/memoura](bit.ly/memoura)
 * **The Goal:** Eliminate distractions from email and messaging apps by providing a quick, secure, and ephemeral mechanism for sharing resources between devices or collaborators.
 
 ## ✨ Key Features
