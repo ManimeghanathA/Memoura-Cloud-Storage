@@ -1,6 +1,8 @@
 # Memoura: Ephemeral Storage, Effortlessly Managed
 
-![Memoura Logo Placeholder](path/to/memoura_logo.png)
+<p align="center">
+  <img src="https://github.com/ManimeghanathA/Memoura-Cloud-Storage/blob/main/IMG_20251027_131813_X-Design-star_no%20background.png" alt="Memoura Logo" width="400" height="400" />
+</p>
 
 **Memoura** is a modern, fully serverless application designed for secure, friction-free, and transient data sharing. It solves the problem of digital clutter and data retention risk by guaranteeing that content—whether it's code, notes, or large files—is permanently purged after a defined time-to-live (TTL) or a single access.
 
