@@ -1,0 +1,323 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  TimeBoundStorage - Enhanced with Multi-File, AI Preview, and Key Validation.
+
+
+Globals:
+  Function:
+    Timeout: 3
+    LoggingConfig:
+      LogFormat: JSON
+
+
+  Api:
+    Cors:
+      AllowHeaders:
+        - Content-Type
+        - X-Amz-Date
+        - Authorization
+        - X-Api-Key
+        - X-Amz-Security-Token
+      AllowMethods:
+        - '*'
+      AllowOrigins:
+        - '*'
+
+
+Resources:
+  
+  # --- 1. DynamoDB Table for Metadata (The Brain) ---
+  StorageMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Metadata"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      KeySchema:
+        - AttributeName: AccessKey
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: AccessKey
+          AttributeType: S 
+      TimeToLiveSpecification:
+        AttributeName: ExpiryTimestamp
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+  
+  # --- 2. S3 Bucket for File Storage (The Body) ---
+  FileStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-s3-store-${AWS::AccountId}" 
+      VersioningConfiguration:
+        Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - POST
+              - PUT
+              - GET
+            AllowedOrigins:
+              - !Sub "https://${CloudFrontDistribution.DomainName}"
+            MaxAge: 3000
+      # NEW: Lifecycle Rule for Automatic Cache Cleanup (After 1 day)
+      LifecycleConfiguration:
+        Rules:
+          # Rule to clean up all objects older than 30 days (default policy)
+          - Id: CleanupDefault
+            Prefix: "" # Applies to entire bucket
+            Status: Enabled
+            ExpirationInDays: 30 
+          # CRITICAL: Rule to clean up abandoned cache files after 1 day
+          - Id: CleanupAbandonedCache
+            # Prefix used for all temporary cache files. MUST match prefix used in handlers.
+            Prefix: "cache/" 
+            Status: Enabled
+            ExpirationInDays: 1 
+
+
+  # --- 3. Key Check Function (NEW: Low Latency Validation) ---
+  CheckKeyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: check_key_handler.lambda_handler
+      Runtime: python3.12
+      MemorySize: 128
+      Timeout: 5
+      Environment:
+        Variables:
+          METADATA_TABLE: !Ref StorageMetadataTable
+      Policies:
+        # READ ONLY permission to our DynamoDB Table
+        - DynamoDBReadPolicy:
+            TableName: !Ref StorageMetadataTable
+      Events:
+        CheckKeyAPI:
+          Type: HttpApi
+          Properties:
+            Path: /checkkey/{key}
+            Method: GET
+        CheckKeyAPIPREFLIGHT: # CORS Preflight
+          Type: HttpApi
+          Properties:
+            Path: /checkkey/{key}
+            Method: OPTIONS
+
+
+  # --- 4. Store Data Function (CRUCIAL: Needs to be updated in Phase 3) ---
+  # NOTE: We keep the existing handler name but will replace the logic in Phase 3.
+  StoreDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: store_handler.lambda_handler
+      Runtime: python3.12
+      MemorySize: 256
+      Timeout: 15
+      Environment:
+        Variables:
+          METADATA_TABLE: !Ref StorageMetadataTable
+          S3_BUCKET: !Ref FileStorageBucket
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StorageMetadataTable
+        - S3CrudPolicy:
+            BucketName: !Ref FileStorageBucket
+      Events:
+        StoreAPI:
+          Type: HttpApi
+          Properties:
+            Path: /store
+            Method: POST
+        StoreAPIPREFLIGHT:
+          Type: HttpApi
+          Properties:
+            Path: /store
+            Method: OPTIONS
+            
+  # --- 5. Retrieve Data Function (Remains as last verified version) ---
+  RetrieveDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: retrieve_handler.lambda_handler
+      Runtime: python3.12
+      MemorySize: 256
+      Timeout: 15
+      Environment:
+        Variables:
+          METADATA_TABLE: !Ref StorageMetadataTable
+          S3_BUCKET: !Ref FileStorageBucket
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StorageMetadataTable
+        - S3ReadPolicy:
+            BucketName: !Ref FileStorageBucket
+      Events:
+        RetrieveAPIGET:
+          Type: HttpApi
+          Properties:
+            Path: /retrieve/{key}
+            Method: GET
+        RetrieveAPIPOST:
+          Type: HttpApi
+          Properties:
+            Path: /retrieve/{key}
+            Method: POST
+        RetrieveAPIPREFLIGHT:
+          Type: HttpApi
+          Properties:
+            Path: /retrieve/{key}
+            Method: OPTIONS
+            
+  # --- 6. Format Preview Function (NEW: AI Formatting via S3 Cache) ---
+  FormatPreviewFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: format_preview_handler.lambda_handler # NEW Handler name
+      Runtime: python3.12
+      # Higher memory/timeout for the AI call
+      MemorySize: 512
+      Timeout: 45 
+      Environment:
+        Variables:
+          METADATA_TABLE: !Ref StorageMetadataTable
+          S3_BUCKET: !Ref FileStorageBucket
+          # Ensure this ARN is correct for your secret manager entry
+          GEMINI_SECRET_ARN: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:TimeBoundStorage/GeminiKey-76oNUO" 
+      Policies:
+        # Needs CRUD for future update to DynamoDB record after final save
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StorageMetadataTable 
+        # Needs CRUD for reading raw/writing formatted cache files
+        - S3CrudPolicy: 
+            BucketName: !Ref FileStorageBucket
+        # Policy to read the Gemini API Key
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:TimeBoundStorage/GeminiKey-*"
+      Events:
+        FormatPreviewAPI:
+          Type: HttpApi
+          Properties:
+            Path: /format-preview/{key}
+            Method: POST
+        FormatPreviewAPIPREFLIGHT:
+          Type: HttpApi
+          Properties:
+            Path: /format-preview/{key}
+            Method: OPTIONS
+            
+  # --- 7. Frontend Resources (Unchanged) ---
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-frontend-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Join ['', ['arn:aws:s3:::', !Ref FrontendBucket, '/*']]
+
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: CloudFront distribution for TimeBoundStorage Frontend
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        Origins:
+          - DomainName: !GetAtt FrontendBucket.DomainName
+            Id: S3-Frontend-Origin
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: S3-Frontend-Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+
+  # --- 8. TTL S3 Cleanup Function (NEW) ---
+  TTLCleanupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: ttl_cleanup_handler.lambda_handler # New Python file
+      Runtime: python3.12
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref FileStorageBucket
+      Policies:
+        # CRITICAL: Permission to delete files from the S3 bucket
+        - S3CrudPolicy:
+            BucketName: !Ref FileStorageBucket
+      Events:
+        # FIXED: Use 'Type: DynamoDB' for DynamoDB Streams in SAM
+        DynamoDBStreamEvent: 
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt StorageMetadataTable.StreamArn # Reference the stream
+            StartingPosition: LATEST
+            BatchSize: 10
+
+
+# --- FINAL OUTPUTS ---
+Outputs:
+  StoreApiEndpoint:
+    Description: "API Gateway POST /store Endpoint"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/store"
+  RetrieveApiEndpoint:
+    Description: "API Gateway GET /retrieve Endpoint"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/retrieve/{key}"
+  CheckKeyApiEndpoint:
+    Description: "API Gateway GET /checkkey Endpoint"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/checkkey/{key}"
+  FormatPreviewApiEndpoint:
+    Description: "API Gateway POST /format-preview Endpoint"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/format-preview/{key}"
+  FrontendURL:
+    Description: "CloudFront HTTPS URL for the Static Frontend"
+    Value: !GetAtt CloudFrontDistribution.DomainName

@@ -1,0 +1,3 @@
+google-genai
+requests
+boto3

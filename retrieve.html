@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Memoura - Retrieve Secure & Ephemeral Data</title>
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Arvo:wght@700&display=swap"
+    rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+    
+    <!-- Code Highlight CSS: Used for displaying markdown/code results -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"> 
+
+    <style>
+        /* ===========================
+         * 🌗 THEME BASE & UTILITIES
+         * =========================== */
+        .page-bg { background-color: #f7f7f7; }
+        .dark .page-bg { background-color: #121212; }
+
+        /* Icon Fix */
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal; font-size: 24px; line-height: 1; letter-spacing: normal;
+            text-transform: none; display: inline-block; white-space: nowrap; word-wrap: normal; direction: ltr;
+            -webkit-font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
+        }
+        
+        /* ===========================
+         * 🌟 Starry Background Styles
+         * =========================== */
+        @keyframes slowRotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        #star-field {
+            position: fixed; /* FIX: Prevents scroll/whitespace bug */
+            top: 0; left: 0; right: 0; bottom: 0;
+            transform-origin: center center;
+            animation: slowRotate 400s linear infinite;
+            z-index: 0;
+        }
+        .star {
+            position: absolute; border-radius: 50%;
+            background-color: #000000;
+            transition: background-color 0.5s;
+        }
+        .dark .star { background-color: #ffffff; }
+
+        /* ===========================
+         * 🧾 INPUT + TEXTAREA STYLING 
+         * =========================== */
+        input[type="text"], input[type="password"], textarea, select {
+            border: 1px solid #d1d5db; background-color: #ffffff; color: #000000; 
+            border-radius: 0.5rem; transition: all 0.2s ease; 
+            padding: 0.5rem 0.75rem; 
+            font-size: 1.125rem; /* text-lg */
+        }
+        .dark input[type="text"], .dark input[type="password"], .dark textarea, .dark select {
+            border: 1px solid #374151; background-color: #1f2937; color: #ffffff; 
+        }
+
+        /* Result Content Area Styling */
+        #content-preview, .retrieved-data-container {
+            @apply border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-lg;
+            padding: 1.5rem;
+            margin-top: 1rem;
+            word-wrap: break-word;
+            overflow-x: auto;
+        }
+
+        /* Password Gate Styling */
+        #password-gate {
+            @apply bg-gray-50 dark:bg-gray-800 p-8 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 text-center;
+        }
+
+        /* Code Block Styles (Inherited from store.html) */
+        .code-block-wrapper { position: relative; margin: 15px 0; border-radius: 6px; overflow: hidden; }
+        #content-preview pre { padding: 0; margin: 0; position: relative; }
+        #content-preview pre code { display: block; padding: 15px; overflow-x: auto; }
+        .code-utility-bar { 
+            display: flex; justify-content: flex-start; align-items: center; background-color: #3e3e3e; 
+            color: #f1f1f1; padding: 5px 15px; font-size: 0.9em; height: 30px; 
+        }
+        .copy-icon-button { 
+            position: absolute; top: 5px; right: 5px; background-color: rgba(0, 0, 0, 0.4); border: none; 
+            border-radius: 4px; cursor: pointer; padding: 5px 8px; opacity: 0.8; z-index: 10; display: flex; align-items: center;
+            transition: background-color 0.2s, opacity 0.2s;
+        }
+        .copy-icon-button:hover { background-color: #007bff; opacity: 1; }
+        .copy-icon-button svg { width: 16px; height: 16px; fill: #f1f1f1; }
+
+                /* Start page invisible */
+        body {
+        opacity: 0;
+        transition: opacity .5s ease;
+        }
+
+        /* When ready, fade in */
+        body.fade-in {
+        opacity: 1;
+        }
+
+    </style>
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-text": "#000000",
+                        "background-light": "#f7f7f7",
+                        "background-dark": "#121212",
+                        "gray-950": "#0a0a0a"
+                    },
+                    fontFamily: { "display": ["Inter", "sans-serif"] },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "xxl": "1.5rem", "3xl": "2rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+</head>
+
+<body class="font-display">
+    
+    <!-- STAR FIELD BACKGROUND CONTAINER -->
+    <div class="absolute inset-0 pointer-events-none" id="star-field">
+        <script>
+            function createStar(size, top, left) {
+                const star = document.createElement('div');
+                star.className = 'star transition-colors duration-500';
+                star.style.cssText = `width: ${size}px; height: ${size}px; top: ${top}%; left: ${left}%;`;
+                return star;
+            }
+            const stars = [
+                [2, 10, 20], [3, 15, 80], [2, 25, 5], [2, 40, 90], [4, 50, 50], [2, 60, 15], [3, 75, 70], [2, 85, 30],
+                [2, 95, 95], [3, 30, 65], [2, 5, 45], [2, 65, 85], [3, 80, 10], [2, 22, 33], [3, 66, 22], [2, 88, 77],
+                [2, 18, 92], [2, 78, 8], [2, 38, 28], [3, 92, 62], [2, 8, 68], [3, 48, 18], [2, 98, 40], [2, 35, 82],
+                [3, 70, 48], [2, 3, 12], [3, 8, 98], [2, 52, 3], [2, 68, 98], [3, 82, 52], [2, 95, 3], [2, 2, 75],
+                [3, 28, 88], [2, 42, 2], [2, 72, 18], [3, 89, 88], [2, 12, 2], [3, 24, 70], [2, 16, 10], [3, 20, 25],
+                [2, 95, 45], [3, 98, 55], [2, 93, 50], [4, 18, 10], [3, 10, 75], [4, 80, 25], [3, 70, 90], [5, 90, 45],
+                [4, 92, 55], [3, 94, 60], [4, 96, 40], [3, 98, 35], [4, 90, 70], [3, 95, 10], [4, 93, 85],
+                [1, 5, 5], [1, 95, 5], [1, 5, 95], [1, 95, 90], [1, 2, 50], [1, 98, 50], [1, 50, 2], [1, 50, 98],
+                [2, 12, 40], [2, 88, 60], [2, 40, 12], [2, 60, 88], [3, 70, 30], [3, 30, 70], [2, 25, 25], [2, 75, 75],
+                [1, 15, 55], [1, 85, 45], [1, 45, 15], [1, 55, 85], [2, 3, 80], [2, 97, 20], [2, 20, 97], [2, 80, 3],
+                [3, 5, 30], [3, 95, 70], [2, 10, 50], [2, 90, 50], [2, 50, 10], [2, 50, 90], [1, 44, 44], [1, 56, 56],
+                [1, 7, 7], [1, 93, 93], [1, 4, 30], [1, 96, 70], [2, 50, 5], [2, 50, 95], [2, 10, 50], [2, 90, 50]
+            ];
+            const starContainer = document.currentScript.parentElement;
+            stars.forEach(s => starContainer.appendChild(createStar(s[0], s[1], s[2])));
+        </script>
+    </div>
+
+    <!-- Main Content Wrapper -->
+    <div class="page-bg min-h-screen w-full flex flex-col transition-colors duration-500">
+        
+        <!-- Header -->
+        <header class="w-full 
+            px-4 py-1 sm:px-6 sm:py-1 md:px-8 md:py-0 
+            border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50 bg-white dark:bg-background-dark/90 backdrop-blur-sm">
+
+            
+            <!-- Use a max-width container inside the header to match common design practice -->
+            <div class="max-w-7xl mx-auto flex items-center justify-between">
+                
+                <!-- LOGO & TITLE CONTAINER (LEFT SIDE) -->
+                <div class="flex items-center gap-2 text-black dark:text-white transition-colors duration-500">
+                    
+                    <!-- Logo Link Container: SLIGHTLY SMALLER SIZE FOR STICKY HEADER -->
+                    <a href="./index.html" class="flex items-center gap-1 flex-shrink-0">
+                        <!-- LOGO CONTAINER: Set to size-10 (40px) or size-12 (48px) for less intrusion -->
+                        <div class="size-24"> 
+                            <svg viewBox="0 0 1132 754" fill="currentColor" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M854.644 443.228C855.034 442.795 855.424 442.362 856.5 441.658C862.793 437.489 869.085 433.32 876.048 429.079C878.744 426.484 882.162 424.308 883.972 421.196C886.877 416.2 889.95 410.764 890.758 405.196C892.515 393.086 885.84 384.189 876.903 376.021C873.701 373.641 870.498 371.262 866.983 368.224C865.69 367.745 864.396 367.266 863.109 366.075C861.009 364.732 858.909 363.389 856.53 361.443C837.64 350.173 816.839 343.397 796.199 336.443C768.262 327.03 736.318 320.463 733.475 322.489C744.038 325.486 754.887 328.113 765.418 331.677C776.057 335.278 786.515 339.504 796.813 344.004C810.674 350.063 823.715 357.53 833.718 369.284C838.415 374.804 841.576 381.545 840.386 388.485C839.458 393.897 835.408 398.773 832.112 404.126C825.448 409.107 818.784 414.089 812.041 419.044C812.041 419.044 812.055 419.126 811.361 419.27C809.184 420.486 807.007 421.703 804.06 422.814C797.974 425.198 791.984 427.875 785.785 429.914C759.212 438.654 731.846 444.017 704.156 447.328C683.626 449.783 662.942 451.148 642.287 452.282C623.318 453.323 604.288 453.989 585.299 453.752C564.561 453.495 543.833 452.111 523.111 451.019C512.714 450.47 502.27 449.995 491.971 448.582C469.981 445.564 448.036 442.178 426.141 438.531C402.02 434.514 378.405 428.328 355.28 420.385C347.08 417.568 339.087 414.147 330.646 410.426C328.767 409.61 326.887 408.794 324.577 407.438C322.091 406.2 319.605 404.962 316.861 403.097C312.065 399.995 307.269 396.892 302.177 393.168C299.562 390.376 296.853 387.665 294.35 384.776C288.63 378.171 285.646 366.519 290.902 357.632C296.478 348.205 304.543 341.637 313.915 336.876C338.042 324.621 363.825 317.335 390.438 312.81C395.555 311.94 400.628 310.815 405.721 309.808C403.333 308.984 401.027 308.836 398.819 309.235C375.97 313.363 353.033 317.086 330.331 321.915C309.705 326.304 289.614 332.698 270.199 342.956C267.739 344.505 265.279 346.054 262.165 347.789C261.09 348.474 260.015 349.159 258.271 350.063C253.478 354.098 248.056 357.593 244.024 362.282C236.182 371.401 232.935 382.272 239.016 394.246C243.521 403.115 250.299 409.885 259.017 415.812C260.8 416.816 262.583 417.82 264.407 418.767C264.407 418.767 264.433 418.836 264.726 419.447C267.431 421.114 270.136 422.78 273.225 424.875C273.788 424.988 274.35 425.102 275.08 425.741C276.105 426.064 277.13 426.387 278.409 427.152C278.86 427.329 279.31 427.507 280.138 428.212C288.095 431.713 296.053 435.215 304.581 439.223C313.057 442.08 321.532 444.936 330.718 448.064C338.289 450.204 345.783 452.676 353.444 454.42C375.186 459.367 396.909 464.48 418.81 468.621C433.561 471.411 448.576 472.92 463.522 474.543C485.405 476.919 507.291 479.653 529.251 480.852C566.587 482.89 603.979 484.136 641.384 482.093C657.657 481.205 674.011 481.148 690.195 479.446C714.757 476.863 739.254 473.51 763.677 469.814C775.578 468.012 787.248 464.693 799.612 462.055C800.123 461.882 800.633 461.71 801.886 461.567C802.593 461.426 803.3 461.285 804.825 461.175C813.875 458.088 822.924 455.001 832.771 451.939C835.834 450.799 838.897 449.659 842.637 448.588C844.799 447.548 846.961 446.508 849.665 445.277C849.781 445.124 849.897 444.971 850.665 444.839C851.794 444.274 852.923 443.71 854.644 443.228ZM517.305 304.534C522.729 302.345 528.044 299.818 533.598 298.033C547.86 293.448 562.755 293.33 577.517 292.353C580.387 292.163 583.251 291.887 586.118 291.65C585.64 290.302 585.274 289.96 584.862 289.89C568.878 287.207 552.661 285.483 536.967 281.629C520.655 277.623 508.994 267.524 503.812 250.552C498.846 234.291 498.243 217.594 497.015 200.906C496.898 199.318 496.377 197.76 496.044 196.188C494.622 196.957 494.348 197.548 494.239 198.169C491.518 213.659 489.533 229.325 485.878 244.59C483.005 256.588 476.502 266.679 464.715 272.716C453.327 278.548 441.129 280.431 428.726 281.599C416.985 282.705 405.202 283.354 393.437 284.204C394.292 284.956 395.195 285.163 396.107 285.311C413.32 288.116 430.701 290.164 447.702 293.927C464.337 297.608 476.206 307.762 481.47 324.636C485.817 338.568 486.825 352.972 487.79 367.388C488.253 374.295 488.543 381.214 488.981 389.439C491.065 374.903 492.593 361.719 494.916 348.678C497.881 332.036 501.93 315.729 517.305 304.534Z"/>
+                            </svg>
+                            
+                        </div>
+                        <!-- TITLE CONTAINER: Align Memoura closer to the logo (gap-1 is added below) -->
+                        <h1 class="text-3xl font-extrabold leading-tight tracking-[-0.015em]" style="font-family: 'Arvo', serif;">
+                            Memoura
+                        </h1>
+                    </a>
+                </div>
+
+                <!-- THEME TOGGLE BUTTON (RIGHT SIDE) -->
+                <button id="theme-toggle"
+                    class="flex items-center justify-center size-10 rounded-full text-black/80 dark:text-white/80 hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+                    <span id="theme-icon" class="material-symbols-outlined text-3xl"></span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <!-- Reduced max width for tighter display -->
+        <main class="flex-1 max-w-4xl mx-auto w-full p-4 sm:p-8 md:p-12"> 
+
+            <section id="retrieve-section" 
+                class="bg-white shadow-2xl p-6 md:p-10 rounded-3xl border border-gray-100 
+                       dark:bg-gray-950 dark:shadow-none dark:border-4 dark:border-gray-700 
+                       text-gray-900 dark:text-white" 
+                style="position: relative; z-index: 10;">
+                
+                <h2 class="text-4xl md:text-5xl font-extrabold mb-8 pb-3 text-center border-b border-gray-200 dark:border-gray-800">Retrieve Data</h2>
+
+                <!-- 1. MAIN RETRIEVE FORM -->
+                <form id="retrieve-form" class="space-y-4">
+                    <label for="retrieve-key" class="block text-base font-medium mb-1">Unique Key:</label>
+                    <input type="text" id="retrieve-key" required placeholder="Enter Your Unique key" class="w-full rounded-lg text-lg">
+                    
+                    <!-- This hidden field is used by JS for password logic if retrieving manually -->
+                    <input type="hidden" id="retrieve-password"> 
+                    
+                    <button type="submit" class="w-full py-3.5 mt-6 bg-black text-white font-bold text-lg rounded-lg hover:bg-gray-800 transition-colors 
+                                                 dark:bg-white dark:text-black dark:hover:bg-gray-200">
+                        Retrieve Content
+                    </button>
+                </form>
+
+                <!-- 2. PASSWORD GATE UI -->
+                <div id="password-gate" class="hidden my-8 p-6 text-center">
+                    <h3 class="text-2xl font-bold text-red-600 dark:text-red-400">Access Restricted</h3>
+                    <p class="mt-2 mb-6">This content is password protected.</p>
+                    <form id="password-gate-form" class="max-w-xs mx-auto">
+                        <label for="gate-password" class="block text-base font-medium mb-1 text-left">Password:</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="password" id="gate-password" placeholder="Enter password" required class="flex-grow rounded-lg text-lg">
+                            <button type="button" onclick="togglePasswordVisibility('gate-password')" class="px-3 py-1.5 text-sm rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 transition-colors">Show</button>
+                        </div>
+                        <button type="submit" class="w-full py-3 mt-6 bg-black text-white font-bold text-lg rounded-lg hover:bg-gray-800 transition-colors dark:bg-white dark:text-black dark:hover:bg-gray-200">
+                            Unlock Content
+                        </button>
+                    </form>
+                    <p id="gate-status" class="text-red-500 dark:text-red-400 mt-4 text-sm"></p>
+                </div>
+                
+                <p id="status-message" class="text-red-500 dark:text-red-400 mt-4 text-center font-medium text-sm"></p>
+
+                <!-- 3. RETRIEVAL RESULTS AREA -->
+                <div id="retrieve-result" class="hidden mt-8 pt-4 border-t border-gray-200 dark:border-gray-800">
+                    <h3 class="text-3xl font-bold mb-4">Retrieved Content</h3>
+                    
+                    <!-- Metadata -->
+                    <div class="flex flex-col sm:flex-row justify-between text-sm mb-4 border-b pb-2">
+                        <p class="mb-2 sm:mb-0">Mode: <strong id="retrieved-mode" class="text-base"></strong></p>
+                        <p>Expires: <strong id="retrieved-expires" class="text-base"></strong></p>
+                    </div>
+
+                    <!-- TEXT OUTPUT GROUP -->
+                    <div id="text-output-group" class="hidden">
+                        <p class="text-base font-medium mb-2">Content:</p>
+                        <!-- Container where marked.js and highlight.js render the content -->
+                        <div id="content-preview" class="retrieved-data-container min-h-[150px]">Loading...</div>
+                    </div>
+
+                    <!-- FILE OUTPUT GROUP -->
+                    <div id="file-output-group" class="hidden mt-6">
+                        <p class="text-base font-medium mb-4">Available Files (click to download):</p>
+                        <!-- File links are generated here by JS -->
+                        <div id="file-links-container" class="space-y-3"></div>
+                    </div>
+                </div>
+
+            </section>
+
+        </main>
+        
+    </div>
+
+    <!-- Theme Management & External Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.umd.min.js"></script> 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
+    <script>
+        // ------------------ THEME INJECTION (Retained) ------------------
+        const htmlElement = document.documentElement;
+        function loadTheme() {
+            const storedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
+                htmlElement.classList.add('dark');
+            } else {
+                htmlElement.classList.remove('dark');
+            }
+            // No need to call updateModeButtonStyles here as it's not present on this page
+            const iconElement = document.getElementById('theme-icon');
+            if (iconElement) {
+                iconElement.textContent = htmlElement.classList.contains('dark') ? 'light_mode' : 'dark_mode';
+            }
+        }
+        function setTheme(theme) {
+            if (theme === 'dark') {
+                htmlElement.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                htmlElement.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            }
+            const iconElement = document.getElementById('theme-icon');
+            if (iconElement) {
+                iconElement.textContent = htmlElement.classList.contains('dark') ? 'light_mode' : 'dark_mode';
+            }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTheme();
+            const toggleButton = document.getElementById('theme-toggle');
+            if (toggleButton) {
+                toggleButton.addEventListener('click', () => {
+                    const newTheme = htmlElement.classList.contains('dark') ? 'light' : 'dark';
+                    setTheme(newTheme);
+                });
+            }
+        });
+        // Initialize Marked for markdown rendering
+        marked.setOptions({
+            gfm: true,
+            breaks: true,
+            highlight: function(code, lang) {
+                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                return hljs.highlight(code, { language }).value;
+            }
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+        // Fade in when page loads
+        document.body.classList.add("fade-in");
+
+        // For all internal links, add fade-out before leaving
+        document.querySelectorAll("a").forEach(link => {
+            if (link.hostname === window.location.hostname) {
+            link.addEventListener("click", e => {
+                e.preventDefault();
+                const href = link.getAttribute("href");
+
+                // Fade out current page
+                document.body.classList.remove("fade-in");
+                document.body.style.opacity = 0;
+
+                // After transition, go to next page
+                setTimeout(() => {
+                window.location.href = href;
+                }, 400);
+            });
+            }
+        });
+        });
+
+    </script>
+    
+    <!-- Main Application Logic -->
+    <script src="retrieve.js?v=103"></script>
+</body>
+</html>
