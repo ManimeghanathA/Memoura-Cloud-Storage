@@ -6,12 +6,12 @@
 
 **Memoura** is a modern, fully serverless application designed for secure, friction-free, and transient data sharing. It solves the problem of digital clutter and data retention risk by guaranteeing that content—whether it's code, notes, or large files—is permanently purged after a defined time-to-live (TTL) or a single access.
 
-## 🚀 Live Demo & Core Value
+## Live Demo & Core Value
 
 * **Try it Live:** [bit.ly/memoura](https://d59k1lvo2q6te.cloudfront.net)
 * **The Goal:** Eliminate distractions from email and messaging apps by providing a quick, secure, and ephemeral mechanism for sharing resources between devices or collaborators.
 
-## ✨ Key Features
+## Key Features
 
 * **Guaranteed Ephemerality:** Data and files are permanently deleted from S3, powered by **DynamoDB TTL** and a dedicated S3 Cleanup Lambda function.
 * **Hybrid Content Mode:** Share multiple files **and** custom text/code within a single, unified link.
@@ -20,7 +20,7 @@
 * **Layered Security:** Supports optional **Password Protection** (using SHA-256 hashing) and **One-Time Access** deletion on first retrieval.
 * **Custom Keys:** Define your own access key (e.g., `MY-PROJECT-V1`) for easy sharing.
 
-## 🏛️ Architecture Overview
+## Architecture Overview
 
 Memoura is built on a scalable and cost-efficient **AWS Serverless** architecture defined entirely in the `template.yaml`.
 
@@ -78,7 +78,7 @@ Allow SAM CLI IAM role creation: Yes (Required to create the necessary permissio
 
 The deployment output will display the CloudFront URL and the API Gateway Endpoints.
 
-## 🧹 Cleanup
+## Cleanup
 To completely remove all resources created by this stack (DynamoDB table, S3 buckets, Lambda functions, API Gateway, and CloudFormation stack), use the AWS CLI. Assuming you used your project name for the stack name:
 
 ```Bash
